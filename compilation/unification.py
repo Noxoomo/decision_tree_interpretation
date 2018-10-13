@@ -41,14 +41,14 @@ def unify_catboost_tree(tree):
         out_tree['leaf_value'] = tree['leaf_values'][0]
         out_tree['leaf_count'] = tree['leaf_weights'][0]
     else:
-        out_tree['split_feature'] = tree['splits'][0]['float_feature_index']
-        out_tree['threshold'] = tree['splits'][0]['border_id']
+        out_tree['split_feature'] = tree['splits'][-1]['float_feature_index']
+        out_tree['threshold'] = tree['splits'][-1]['border_id']
 
         sz = len(tree['leaf_weights'])
         left_tree = {'leaf_weights': tree['leaf_weights'][:sz // 2], 'leaf_values': tree['leaf_values'][:sz // 2],
-                     'splits': tree['splits'][1:]}
+                     'splits': tree['splits'][:-1]}
         right_tree = {'leaf_weights': tree['leaf_weights'][sz // 2:], 'leaf_values': tree['leaf_values'][sz // 2:],
-                      'splits': tree['splits'][1:]}
+                      'splits': tree['splits'][:-1]}
 
         out_tree['left_child'] = unify_catboost_tree(left_tree)
         out_tree['right_child'] = unify_catboost_tree(right_tree)
