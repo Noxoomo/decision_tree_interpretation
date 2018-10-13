@@ -149,3 +149,60 @@ def test_catboost_ensemble_compilation():
         rmse2 = mean_squared_error(y_test, ys) ** 0.5
         print('rmse of polynomial from catboost model:', rmse2)
         assert (abs(rmse0 - rmse2) < 0.01)
+
+
+def test_compilation_simple_trees():
+    tree1 = {"split_feature": 1,
+             "threshold": 1,
+             "left_child":
+                 {"leaf_value": 1,
+                  "leaf_count": 1},
+             "right_child":
+                 {"leaf_value": 2,
+                  "leaf_count": 1}
+             }
+    tree2 = {"split_feature": 1,
+             "threshold": 1.5,
+             "left_child":
+                 {"leaf_value": 0.5,
+                  "leaf_count": 1},
+             "right_child":
+                 {"leaf_value": 3,
+                  "leaf_count": 1}
+             }
+    tree = {"split_feature": 0,
+            "threshold": 0.5,
+            "left_child":
+                tree1,
+            "right_child":
+                tree2}
+    poly1 = compilation.tree_to_polynomial(tree1)
+    assert (poly1 == {frozenset(): 2,
+                      frozenset({(1, 1)}): -1})
+    poly2 = compilation.tree_to_polynomial(tree2)
+    assert (poly2 == {frozenset(): 3,
+                      frozenset({(1, 1.5)}): -2.5})
+
+    poly = compilation.tree_to_polynomial(tree)
+    assert (poly == {frozenset(): 3,
+                     frozenset({(0, 0.5)}): -1,
+                     frozenset({(1, 1.5)}): -2.5,
+                     frozenset({(0, 0.5), (1, 1)}): -1,
+                     frozenset({(0, 0.5), (1, 1.5)}): 2.5})
+
+    ensemble = [tree, tree, tree]
+    poly_ensemble = compilation.tree_ensemble_to_polynomial(ensemble)
+    assert (poly_ensemble == {frozenset(): 9,
+                              frozenset({(0, 0.5)}): -3,
+                              frozenset({(1, 1.5)}): -7.5,
+                              frozenset({(0, 0.5), (1, 1)}): -3,
+                              frozenset({(0, 0.5), (1, 1.5)}): 7.5})
+
+    ensemble2 = [tree, tree1, tree2]
+    poly_ensemble2 = compilation.tree_ensemble_to_polynomial(ensemble2)
+    assert (poly_ensemble2 == {frozenset(): 8,
+                               frozenset({(0, 0.5)}): -1,
+                               frozenset({(1, 1)}): -1,
+                               frozenset({(1, 1.5)}): -5.0,
+                               frozenset({(0, 0.5), (1, 1)}): -1,
+                               frozenset({(0, 0.5), (1, 1.5)}): 2.5})
