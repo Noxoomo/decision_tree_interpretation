@@ -90,4 +90,4 @@ def polynomial_to_json(poly):
 
 def save_poly(poly, file_name):
     with open(file_name, 'w') as outfile:
-        json.dump(polynomial_to_json(poly), outfile)
+        json.dump(polynomial_to_json(poly), outfile, indent=2)
