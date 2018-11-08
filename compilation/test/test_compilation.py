@@ -2,11 +2,11 @@ import lightgbm as lgb
 import pandas as pd
 from sklearn.metrics import mean_squared_error
 from catboost import Pool, CatBoostRegressor
-import xgboost as xgb
+from xgboost import XGBRegressor
 import json
+
 import unification
 import compilation
-import numpy as np
 
 
 def train_lgb_model(y_train, X_train):
@@ -32,18 +32,10 @@ def train_lgb_model(y_train, X_train):
     return model
 
 
-def train_xgb_model(y_train, X_train):
-    xgdmat = xgb.DMatrix(X_train, y_train)
-    params = {'eta': 0.1, 'seed': 0, 'subsample': 0.8, 'colsample_bytree': 0.8, 'objective': 'reg:logistic',
-              'max_depth': 5, 'min_child_weight': 1}
-    model = xgb.train(params, xgdmat)
-    return model
-
-
 def train_catboost_model(y_train, X_train):
     train_pool = Pool(X_train, y_train)
 
-    model = CatBoostRegressor(iterations=10, depth=4, learning_rate=1, loss_function='RMSE')
+    model = CatBoostRegressor(n_estimators=10, depth=5, learning_rate=1, loss_function='RMSE')
     model.fit(train_pool)
 
     return model
@@ -73,6 +65,7 @@ def load_data():
     y_test = df_test[0].values
     X_train = df_train.drop(0, axis=1).values
     X_test = df_test.drop(0, axis=1).values
+
     return y_train, y_test, X_train, X_test
 
 
@@ -102,24 +95,31 @@ def test_lgb_ensemble_compilation():
 def test_xgb_ensemble_compilation():
     y_train, y_test, X_train, X_test = load_data()
 
-    xgb_model = train_xgb_model(y_train, X_train)
-    test_dmat = xgb.DMatrix(X_test)
-    y_pred = xgb_model.predict(test_dmat)
-    rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
-    print('rmse of xgb model:', rmse0)
-    assert (rmse0 < 0.5)
+    model = XGBRegressor(n_estimators=10, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
+                         reg_alpha=1)
+    model.fit(X_train, y_train)
 
+    y_pred = model.predict(X_test)
+    rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
+    print("rmse of xgb =", rmse0)
+    xgb_model = model.get_booster()
+    save_xgb_model(xgb_model)
     json_model_xgb = xgb_model.get_dump(dump_format='json')
     xgb_model_unified = unification.unify_xgb_ensemble(json_model_xgb)
-    ys = compilation.trees_predict(xgb_model_unified, X_test, lambda x: 1 / (1 + np.exp(-x)))
+    with open('data/models/model_xgb_unified1.json', 'w') as outfile:
+        json.dump(xgb_model_unified, outfile, indent=2)
+
+    ys = compilation.trees_predict(xgb_model_unified, X_test, lambda x: x + 0.5)
+
     rmse1 = mean_squared_error(y_test, ys) ** 0.5
     print('rmse of xgb unified:', rmse1)
     assert (abs(rmse0 - rmse1) < 0.01)
 
     poly_xgb = compilation.tree_ensemble_to_polynomial(xgb_model_unified)
-    ys = compilation.poly_predict(poly_xgb, X_test, lambda x: 1 / (1 + np.exp(-x)))
+    ys = compilation.poly_predict(poly_xgb, X_test, lambda x: x + 0.5)
     rmse2 = mean_squared_error(y_test, ys) ** 0.5
     print('rmse of polynomial from xgb model:', rmse2)
+    compilation.save_poly(poly_xgb, 'data/models/polynomial_xgb1.json')
     assert (abs(rmse0 - rmse2) < 0.01)
 
 
@@ -131,7 +131,7 @@ def test_catboost_ensemble_compilation():
     y_pred = catboost_model.predict(test_pool)
     rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
     print('rmse of catboost model:', rmse0)
-    assert (rmse0 < 0.5)
+
     save_catboost_model(catboost_model)
     with open('./data/models/model_catboost.json') as f:
         json_model_catboost = json.load(f)
@@ -155,20 +155,16 @@ def test_compilation_simple_trees():
     tree1 = {"split_feature": 1,
              "threshold": 1,
              "left_child":
-                 {"leaf_value": 1,
-                  "leaf_count": 1},
+                 {"leaf_value": 1},
              "right_child":
-                 {"leaf_value": 2,
-                  "leaf_count": 1}
+                 {"leaf_value": 2}
              }
     tree2 = {"split_feature": 1,
              "threshold": 1.5,
              "left_child":
-                 {"leaf_value": 0.5,
-                  "leaf_count": 1},
+                 {"leaf_value": 0.5},
              "right_child":
-                 {"leaf_value": 3,
-                  "leaf_count": 1}
+                 {"leaf_value": 3}
              }
     tree = {"split_feature": 0,
             "threshold": 0.5,
@@ -206,3 +202,39 @@ def test_compilation_simple_trees():
                                frozenset({(1, 1.5)}): -5.0,
                                frozenset({(0, 0.5), (1, 1)}): -1,
                                frozenset({(0, 0.5), (1, 1.5)}): 2.5})
+
+
+def test_features_txt_xgboost():
+    df_train = pd.read_csv('./data/regression/features.txt', header=None, sep='\t')
+    df_test = pd.read_csv('./data/regression/featuresTest.txt', header=None, sep='\t')
+
+    y_train = df_train[1].values
+    y_test = df_test[1].values
+    X_train = df_train.drop([0, 1, 2, 3], axis=1).values
+    X_test = df_test.drop([0, 1, 2, 3], axis=1).values
+
+    model = XGBRegressor(n_estimators=500, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
+                         reg_alpha=1)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
+    print("rmse features.txt =", rmse0)
+    xgb_model = model.get_booster()
+    save_xgb_model(xgb_model)
+    json_model_xgb = xgb_model.get_dump(dump_format='json')
+    xgb_model_unified = unification.unify_xgb_ensemble(json_model_xgb)
+    with open('data/models/model_xgb_unified.json', 'w') as outfile:
+        json.dump(xgb_model_unified, outfile, indent=2)
+
+    ys = compilation.trees_predict(xgb_model_unified, X_test, lambda x: x + 0.5)
+    rmse1 = mean_squared_error(y_test, ys) ** 0.5
+    print('rmse of xgb unified:', rmse1)
+    assert (abs(rmse0 - rmse1) < 0.01)
+
+    poly_xgb = compilation.tree_ensemble_to_polynomial(xgb_model_unified)
+    ys = compilation.poly_predict(poly_xgb, X_test, lambda x: x + 0.5)
+    rmse2 = mean_squared_error(y_test, ys) ** 0.5
+    print('rmse of polynomial from xgb model:', rmse2)
+    compilation.save_poly(poly_xgb, 'data/models/polynomial_xgb.json')
+    assert (abs(rmse0 - rmse2) < 0.01)
