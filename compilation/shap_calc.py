@@ -1,63 +1,57 @@
 import numpy as np
 
+MAX_M = 25
 
-def change_in_s(x1, x, s):
+fact = np.ones(MAX_M + 1)
+for i in range(1, MAX_M + 1):
+    fact[i] = fact[i - 1] * i
+
+
+def __change_in_s(x1, x, s):
     m = len(x)
-    x_new = x1.copy()
-    for i in range(m):
-        if (s & (1 << i)) > 0:
-            x_new[i] = x[i]
+    x_new = [x[i] if s & (1 << i) else x1[i] for i in range(m)]
     return x_new
 
 
-def calc_loss_in_point_for_s(model, xs, ys, loss_f, x_id, s):
+def __calc_loss_in_point_for_s(model, xs, loss_f, x, y, s):
     res = 0.
-    x = xs[x_id]
-    y = ys[x_id]
     for x1 in xs:
-        x1_changed = change_in_s(x1, x, s)
+        x1_changed = __change_in_s(x1, x, s)
         y_pred = model.predict([x1_changed])[0]
         res += loss_f(y, y_pred)
     return res / len(xs)
 
 
-def calc_shap_loss_in_point(model, f_id, xs, ys, loss_f, x_id):
+def __calc_shap_loss_in_point(model, f_id, xs, ys, loss_f, x_id):
     m = len(xs[0])
 
-    fact = np.ones(m + 1)
-    for i in range(1, m + 1):
-        fact[i] = fact[i - 1] * i
-
     res = 0.
-    diffs = np.zeros(1 << m)
     for s in range(1 << m):
         if (s & (1 << f_id)) == 0:
             s_size = bin(s).count('1')
             c = fact[s_size] * fact[m - s_size - 1] / fact[m]
-            d = c * (calc_loss_in_point_for_s(model, xs, ys, loss_f, x_id, s | (1 << f_id))
-                     - calc_loss_in_point_for_s(model, xs, ys, loss_f, x_id, s))
+            sum_s_plus_f = __calc_loss_in_point_for_s(model, xs, loss_f, xs[x_id], ys[x_id], s | (1 << f_id))
+            sum_s = __calc_loss_in_point_for_s(model, xs, loss_f, xs[x_id], ys[x_id], s)
+            diff = sum_s_plus_f - sum_s
+            d = c * diff
             res += d
-            diffs[s] = d
-    return res, diffs
+    return res
 
 
 def calc_shap_loss(model, xs, ys, loss_f):
     m = len(xs[0])
     res = np.zeros(m)
-    diffs = np.zeros((m, 1 << m))
     for f_id in range(m):
         for x_id in range(len(xs)):
-            p, diffs_x = calc_shap_loss_in_point(model, f_id, xs, ys, loss_f, x_id)
-            # print(i, "+", p)
+            p = __calc_shap_loss_in_point(model, f_id, xs, ys, loss_f, x_id)
             res[f_id] += p
-            diffs[f_id] += diffs_x
 
         res[f_id] /= len(xs)
 
-    return res, diffs
+    return res
 
 
-def calc_shap_rmse_subsets_slow(model, f_id, x, x1):
+def __calc_shap_rmse_subsets_slow(model, f_id, x, x1):
     m = len(x)
     fact = np.ones(m + 1)
     for i in range(1, m + 1):
@@ -68,19 +62,16 @@ def calc_shap_rmse_subsets_slow(model, f_id, x, x1):
         if (s & (1 << f_id)) == 0:
             s_size = bin(s).count('1')
             c = fact[s_size] * fact[m - s_size - 1] / fact[m]
-            f1 = model.predict([change_in_s(x1, x, s | (1 << f_id))])[0]
-            f2 = model.predict([change_in_s(x1, x, s)])[0]
+            f1 = model.predict([__change_in_s(x1, x, s | (1 << f_id))])[0]
+            f2 = model.predict([__change_in_s(x1, x, s)])[0]
             d = c * (f1 - f2)
             res += d
 
     return res
 
 
-def calc_shap_rmse_subsets_poly(poly, f_id, x, x1):
+def __calc_shap_rmse_subsets_poly(poly, f_id, x, x1):
     m = len(x)
-    fact = np.ones(m + 1)
-    for i in range(1, m + 1):
-        fact[i] = fact[i - 1] * i
 
     res = 0.
     for mon, val in poly.items():
@@ -104,27 +95,58 @@ def calc_shap_rmse_subsets_poly(poly, f_id, x, x1):
     return res
 
 
-def calc_shap_rmse(poly, xs, ys):
+def __calc_shap_rmse(model, xs, ys, subsets_calc):
     m = len(xs[0])
     res = np.zeros(m)
     for f_id in range(m):
         for x_id in range(len(xs)):
             for x1_id in range(x_id, len(xs)):
-                p = -2 * (ys[x_id] - ys[x1_id]) * calc_shap_rmse_subsets_poly(poly, f_id, xs[x_id], xs[x1_id])
+                p = -2 * (ys[x_id] - ys[x1_id]) * subsets_calc(model, f_id, xs[x_id], xs[x1_id])
                 res[f_id] += p
         res[f_id] /= len(xs) ** 2
 
     return res
 
 
-def calc_shap_rmse_slow(poly, xs, ys):
+def calc_shap_rmse_poly(poly, xs, ys):
+    return __calc_shap_rmse(poly, xs, ys, __calc_shap_rmse_subsets_poly)
+
+
+def calc_shap_rmse_slow(model, xs, ys):
+    return __calc_shap_rmse(model, xs, ys, __calc_shap_rmse_subsets_slow)
+
+
+def __calc_f_in_point_for_s(xs, ys, x, s):
+    cnt = 0
+    sum_f = 0
+    for k in range(len(xs)):
+        if __change_in_s(x, xs[k], s) == x:
+            cnt += 1
+            sum_f += ys[k]
+    return sum_f / cnt
+
+
+def __calc_shap_in_point(f_id, xs, ys, x):
     m = len(xs[0])
-    res = np.zeros(m)
-    for f_id in range(m):
-        for x_id in range(len(xs)):
-            for x1_id in range(x_id, len(xs)):
-                p = -2 * (ys[x_id] - ys[x1_id]) * calc_shap_rmse_subsets_slow(poly, f_id, xs[x_id], xs[x1_id])
-                res[f_id] += p
-        res[f_id] /= len(xs) ** 2
+    res = 0.
+    for s in range(1 << m):
+        if (s & (1 << f_id)) == 0:
+            s_size = bin(s).count('1')
+            c = fact[s_size] * fact[m - s_size - 1] / fact[m]
+            sum_s_plus_f = __calc_f_in_point_for_s(xs, ys, x, s | (1 << f_id))
+            sum_s = __calc_f_in_point_for_s(xs, ys, x, s)
+            diff = sum_s_plus_f - sum_s
+            d = c * diff
+            res += d
+    return res
+
+
+def calc_shap_dependent(xs, ys):
+    m = len(xs[0])
+    res = []
+    for x in xs:
+        res.append(np.zeros(m))
+        for f_id in range(m):
+            res[-1][f_id] = __calc_shap_in_point(f_id, xs, ys, x)
 
     return res
