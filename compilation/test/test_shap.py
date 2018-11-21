@@ -17,39 +17,23 @@ def save_xgb_model(xgb_model):
 
 
 def gen_data_independent_features(n, m):
+    return gen_data_dependent_features(n, m, 0)
+
+
+# alpha=0 -- independent
+def gen_data_dependent_features(n, m, alpha=0.5):
     xs = []
     ys = []
     for i in range(n):
-        x = []
-        y = 0.
-        for j in range(m):
+        f = random()
+        x = [int(f * 2)]
+        y = f
+        for j in range(m - 1):
             f = random()
-            x.append(int(f * 2))
+            x.append(int((1 - alpha) * 2 * f + alpha * x[0]))
             y += f
         xs.append(x)
-        ys.append((y + 0.1) / (m + 0.1))
-
-    return xs[:n // 2], ys[:n // 2], xs[n // 2:], ys[n // 2:]
-
-
-def gen_data_dependent_features(n, m):
-    xs = []
-    ys = []
-    for i in range(n):
-        x = []
-        y = 0.
-        for j in range(m // 3):
-            f = random()
-            x.append(int(f * 2))
-            x.append(int(f * 1.5))
-            x.append(1 - int(f * 2))
-            y += f
-        for j in range(m % 3):
-            f = random()
-            x.append(int(f * 2))
-            y += f
-        xs.append(x)
-        ys.append((y + 0.1) / (m + 0.1))
+        ys.append(y / m)
 
     return xs[:n // 2], ys[:n // 2], xs[n // 2:], ys[n // 2:]
 
@@ -128,7 +112,7 @@ def test_shap_independent_features():
     diff = 0
     for i in range(len(shap_my)):
         for j in range(len(shap_my[i])):
-            assert (abs(shap_my[i][j] - shap[i][j]) < 0.1)
+            assert (abs(shap_my[i][j] - shap[i][j]) < 0.05)
             diff += abs(shap_my[i][j] - shap[i][j])
     print("average_diff =", diff / len(shap_my) / len(shap_my[0]))
 
@@ -138,7 +122,6 @@ def test_shap_dependent_features():
     m = 4
     X_train, y_train, X_test, y_test = gen_data_dependent_features(n, m)
     train_pool = Pool(X_train, y_train)
-    print(X_train, y_train)
     model = CatBoostRegressor(n_estimators=20, depth=5, learning_rate=1, loss_function='RMSE')
     model.fit(train_pool)
     os.makedirs("./data/models/", exist_ok=True)
@@ -158,6 +141,6 @@ def test_shap_dependent_features():
     diff = 0
     for i in range(len(shap_my)):
         for j in range(len(shap_my[i])):
-            assert (abs(shap_my[i][j] - shap[i][j]) < 0.1)
+            assert (abs(shap_my[i][j] - shap[i][j]) < 0.5)
             diff += abs(shap_my[i][j] - shap[i][j])
     print("average_diff =", diff / len(shap_my) / len(shap_my[0]))
