@@ -34,13 +34,16 @@ def tree_to_polynomial(tree):
 
 def tree_ensemble_to_polynomial(ensemble):
     poly_res = {}
+    # sum = 0
     for tree in ensemble:
         poly = tree_to_polynomial(tree)
         for monomial, val in poly.items():
+            # sum += 1
             if monomial in poly_res:
                 poly_res[monomial] += val
             else:
                 poly_res[monomial] = val
+    # print("sum = ", sum) # 28848/26791
     return poly_res
 
 
@@ -71,7 +74,7 @@ def monomial_predict_one(monomial, x):
     return 1
 
 
-def poly_predict(poly, X_test, f):
+def poly_predict(poly, X_test, f=lambda x: x):
     ys = []
     for x in X_test:
         ys.append(0.)

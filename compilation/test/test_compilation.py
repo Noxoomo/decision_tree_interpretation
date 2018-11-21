@@ -5,6 +5,7 @@ from catboost import Pool, CatBoostRegressor
 from xgboost import XGBRegressor
 import json
 
+import decompilation
 import unification
 import compilation
 
@@ -213,7 +214,7 @@ def test_features_txt_xgboost():
     X_train = df_train.drop([0, 1, 2, 3], axis=1).values
     X_test = df_test.drop([0, 1, 2, 3], axis=1).values
 
-    model = XGBRegressor(n_estimators=500, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
+    model = XGBRegressor(n_estimators=10, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
                          reg_alpha=1)
     model.fit(X_train, y_train)
 
@@ -238,3 +239,51 @@ def test_features_txt_xgboost():
     print('rmse of polynomial from xgb model:', rmse2)
     compilation.save_poly(poly_xgb, 'data/models/polynomial_xgb.json')
     assert (abs(rmse0 - rmse2) < 0.01)
+
+
+def test_decompilation_simple_trees():
+    poly1 = {frozenset(): 2, frozenset({(1, 1)}): -1}
+    tree1_expected = {"split_feature": 1,
+                      "threshold": 1,
+                      "left_child":
+                          {"leaf_value": 1},
+                      "right_child":
+                          {"leaf_value": 2}
+                      }
+    ensemble1 = decompilation.polynomial_to_ensemble_greedy(poly1)
+    assert (len(ensemble1) == 1)
+    tree1 = ensemble1[0]
+    # print(tree1)
+    assert (tree1['split_feature'] == tree1_expected['split_feature'])
+    assert (tree1['threshold'] == tree1_expected['threshold'])
+    assert (tree1['threshold'] == tree1_expected['threshold'])
+    assert (tree1['left_child']['leaf_value'] == tree1_expected['left_child']['leaf_value'])
+    assert (tree1['right_child']['leaf_value'] == tree1_expected['right_child']['leaf_value'])
+
+
+def test_decompilation():
+    y_train, y_test, X_train, X_test = load_data()
+    model = XGBRegressor(n_estimators=10, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
+                         reg_alpha=1)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    # print("y_pred =", y_pred)
+    xgb_model = model.get_booster()
+    json_model_xgb = xgb_model.get_dump(dump_format='json')
+    xgb_model_unified = unification.unify_xgb_ensemble(json_model_xgb)
+
+    poly_xgb = compilation.tree_ensemble_to_polynomial(xgb_model_unified)
+
+    model_decompiled = decompilation.polynomial_to_ensemble_greedy(poly_xgb)
+    ys = compilation.trees_predict(model_decompiled, X_test, lambda x: x + 0.5)
+    # print("y_pred_decompiled =", ys)
+    diff = mean_squared_error(y_pred, ys)
+    print("diff =", diff)
+    assert (diff < 0.01)
+
+    with open('data/models/model_xgb_before.json', 'w') as outfile:
+        json.dump(xgb_model_unified, outfile, indent=2)
+
+    with open('data/models/model_xgb_after.json', 'w') as outfile:
+        json.dump(model_decompiled, outfile, indent=2)
