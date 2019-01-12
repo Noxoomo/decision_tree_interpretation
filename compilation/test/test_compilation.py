@@ -10,70 +10,13 @@ import unification
 import compilation
 
 
-def train_lgb_model(y_train, X_train):
-    lgb_train = lgb.Dataset(X_train, y_train)
-
-    params = {
-        'task': 'train',
-        'boosting_type': 'gbdt',
-        'objective': 'regression',
-        'metric': {'l2', 'auc'},
-        'num_leaves': 31,
-        'learning_rate': 0.05,
-        'feature_fraction': 0.9,
-        'bagging_fraction': 0.8,
-        'bagging_freq': 5,
-        'verbose': 0
-    }
-
-    model = lgb.train(params,
-                      lgb_train,
-                      num_boost_round=20)
-
-    return model
-
-
-def train_catboost_model(y_train, X_train):
-    train_pool = Pool(X_train, y_train)
-
-    model = CatBoostRegressor(n_estimators=10, depth=5, learning_rate=1, loss_function='RMSE')
-    model.fit(train_pool)
-
-    return model
-
-
-def save_lgb_model(lgb_model):
-    json_model = lgb_model.dump_model()
-    with open('./data/models/model_lgb.json', 'w') as outfile:
-        json.dump(json_model, outfile)
-
-
-def save_xgb_model(xgb_model):
-    json_model = xgb_model.get_dump(dump_format='json')
-    with open('./data/models/model_xgb.json', 'w') as outfile:
-        json.dump(json_model, outfile)
-
-
-def save_catboost_model(catboost_model):
-    catboost_model.save_model("./data/models/model_catboost.json", format='json')
-
-
-def load_data():
-    df_train = pd.read_csv('./data/regression/regression_train.csv', header=None, sep='\t')
-    df_test = pd.read_csv('./data/regression/regression_test.csv', header=None, sep='\t')
-
-    y_train = df_train[0].values
-    y_test = df_test[0].values
-    X_train = df_train.drop(0, axis=1).values
-    X_test = df_test.drop(0, axis=1).values
-
-    return y_train, y_test, X_train, X_test
+import models_train
 
 
 def test_lgb_ensemble_compilation():
-    y_train, y_test, X_train, X_test = load_data()
+    y_train, y_test, X_train, X_test = models_train.load_data()
 
-    lgb_model = train_lgb_model(y_train, X_train)
+    lgb_model = models_train.train_lgb_model(y_train, X_train)
     y_pred = lgb_model.predict(X_test, num_iteration=lgb_model.best_iteration)
     rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
     print('rmse of lgb model:', rmse0)
@@ -94,7 +37,7 @@ def test_lgb_ensemble_compilation():
 
 
 def test_xgb_ensemble_compilation():
-    y_train, y_test, X_train, X_test = load_data()
+    y_train, y_test, X_train, X_test = models_train.load_data()
 
     model = XGBRegressor(n_estimators=10, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
                          reg_alpha=1)
@@ -104,7 +47,7 @@ def test_xgb_ensemble_compilation():
     rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
     print("rmse of xgb =", rmse0)
     xgb_model = model.get_booster()
-    save_xgb_model(xgb_model)
+    models_train.save_xgb_model(xgb_model)
     json_model_xgb = xgb_model.get_dump(dump_format='json')
     xgb_model_unified = unification.unify_xgb_ensemble(json_model_xgb)
     with open('data/models/model_xgb_unified1.json', 'w') as outfile:
@@ -125,31 +68,40 @@ def test_xgb_ensemble_compilation():
 
 
 def test_catboost_ensemble_compilation():
-    y_train, y_test, X_train, X_test = load_data()
+    y_train, y_test, X_train, X_test = models_train.load_data()
 
-    catboost_model = train_catboost_model(y_train, X_train)
+    catboost_model = models_train.train_catboost_model(y_train, X_train)
     test_pool = Pool(X_test)
     y_pred = catboost_model.predict(test_pool)
     rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
     print('rmse of catboost model:', rmse0)
 
-    save_catboost_model(catboost_model)
+    models_train.save_catboost_model(catboost_model)
     with open('./data/models/model_catboost.json') as f:
         json_model_catboost = json.load(f)
         catboost_model_unified = unification.unify_catboost_ensemble(json_model_catboost)
         with open('./data/models/model_catboost_unified.json', 'w') as outfile:
             json.dump(catboost_model_unified, outfile, indent=2)
-        ys = compilation.trees_predict(catboost_model_unified, X_test, lambda x: x)
-        rmse1 = mean_squared_error(y_test, ys) ** 0.5
-        print('rmse of catboost unified:', rmse1)
-        assert (abs(rmse0 - rmse1) < 0.01)
+        # ys = compilation.trees_predict(catboost_model_unified, X_test, lambda x: x)
+        # rmse1 = mean_squared_error(y_test, ys) ** 0.5
+        # print('rmse of catboost unified:', rmse1)
+        # assert (abs(rmse0 - rmse1) < 0.01)
 
         poly_catboost = compilation.tree_ensemble_to_polynomial(catboost_model_unified)
         compilation.save_poly(poly_catboost, './data/models/model_catboost_poly.json')
-        ys = compilation.poly_predict(poly_catboost, X_test, lambda x: x)
-        rmse2 = mean_squared_error(y_test, ys) ** 0.5
-        print('rmse of polynomial from catboost model:', rmse2)
-        assert (abs(rmse0 - rmse2) < 0.01)
+        # ys = compilation.poly_predict(poly_catboost, X_test, lambda x: x)
+        # rmse2 = mean_squared_error(y_test, ys) ** 0.5
+        # print('rmse of polynomial from catboost model:', rmse2)
+        # assert (abs(rmse0 - rmse2) < 0.01)
+
+        model_decompiled = decompilation.polynomial_to_ensemble_greedy(poly_catboost)
+
+        with open('data/models/model_catboost_decompiled.json', 'w') as outfile:
+            json.dump(model_decompiled, outfile, indent=2)
+
+        print("number of catboost trees =", len(catboost_model_unified))
+        print("number of monomials =", len(poly_catboost))
+        print("number of decompiled oblivious trees =", len(model_decompiled))
 
 
 def test_compilation_simple_trees():
@@ -206,15 +158,9 @@ def test_compilation_simple_trees():
 
 
 def test_features_txt_xgboost():
-    df_train = pd.read_csv('./data/regression/features.txt', header=None, sep='\t')
-    df_test = pd.read_csv('./data/regression/featuresTest.txt', header=None, sep='\t')
+    y_train, y_test, X_train, X_test = models_train.load_data_features_txt()
 
-    y_train = df_train[1].values
-    y_test = df_test[1].values
-    X_train = df_train.drop([0, 1, 2, 3], axis=1).values
-    X_test = df_test.drop([0, 1, 2, 3], axis=1).values
-
-    model = XGBRegressor(n_estimators=10, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
+    model = XGBRegressor(n_estimators=100, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
                          reg_alpha=1)
     model.fit(X_train, y_train)
 
@@ -222,23 +168,37 @@ def test_features_txt_xgboost():
     rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
     print("rmse features.txt =", rmse0)
     xgb_model = model.get_booster()
-    save_xgb_model(xgb_model)
+    models_train.save_xgb_model(xgb_model)
     json_model_xgb = xgb_model.get_dump(dump_format='json')
     xgb_model_unified = unification.unify_xgb_ensemble(json_model_xgb)
     with open('data/models/model_xgb_unified.json', 'w') as outfile:
         json.dump(xgb_model_unified, outfile, indent=2)
 
-    ys = compilation.trees_predict(xgb_model_unified, X_test, lambda x: x + 0.5)
-    rmse1 = mean_squared_error(y_test, ys) ** 0.5
-    print('rmse of xgb unified:', rmse1)
-    assert (abs(rmse0 - rmse1) < 0.01)
+    # ys = compilation.trees_predict(xgb_model_unified, X_test, lambda x: x + 0.5)
+    # rmse1 = mean_squared_error(y_test, ys) ** 0.5
+    # print('rmse of xgb unified:', rmse1)
+    # assert (abs(rmse0 - rmse1) < 0.01)
 
     poly_xgb = compilation.tree_ensemble_to_polynomial(xgb_model_unified)
-    ys = compilation.poly_predict(poly_xgb, X_test, lambda x: x + 0.5)
-    rmse2 = mean_squared_error(y_test, ys) ** 0.5
-    print('rmse of polynomial from xgb model:', rmse2)
     compilation.save_poly(poly_xgb, 'data/models/polynomial_xgb.json')
-    assert (abs(rmse0 - rmse2) < 0.01)
+    # ys = compilation.poly_predict(poly_xgb, X_test, lambda x: x + 0.5)
+    # rmse2 = mean_squared_error(y_test, ys) ** 0.5
+    # print('rmse of polynomial from xgb model:', rmse2)
+    # assert (abs(rmse0 - rmse2) < 0.01)
+
+    model_decompiled = decompilation.polynomial_to_ensemble_greedy(poly_xgb)
+    # ys = compilation.trees_predict(model_decompiled, X_test, lambda x: x + 0.5)
+    # print("y_pred_decompiled =", ys)
+    # diff = mean_squared_error(y_pred, ys)
+    # print("diff =", diff)
+    # assert (diff < 0.01)
+
+    with open('data/models/model_xgb_features_txt_decompiled.json', 'w') as outfile:
+        json.dump(model_decompiled, outfile, indent=2)
+
+    print("number of xgboost trees =", len(xgb_model_unified))
+    print("number of monomials =", len(poly_xgb))
+    print("number of decompiled oblivious trees =", len(model_decompiled))
 
 
 def test_decompilation_simple_trees():
@@ -262,10 +222,8 @@ def test_decompilation_simple_trees():
 
 
 def test_decompilation():
-    y_train, y_test, X_train, X_test = load_data()
-    model = XGBRegressor(n_estimators=10, learning_rate=0.02, max_depth=5, eta=1, subsample=0.8, reg_lambda=0,
-                         reg_alpha=1)
-    model.fit(X_train, y_train)
+    y_train, y_test, X_train, X_test = models_train.load_data()
+    model = models_train.train_xgboost_model(y_train, X_train)
 
     y_pred = model.predict(X_test)
     # print("y_pred =", y_pred)
@@ -287,3 +245,6 @@ def test_decompilation():
 
     with open('data/models/model_xgb_after.json', 'w') as outfile:
         json.dump(model_decompiled, outfile, indent=2)
+
+    print("number of trees before decompilation =", len(xgb_model_unified))
+    print("number of oblivious trees after decompilation =", len(model_decompiled))

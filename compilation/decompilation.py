@@ -10,7 +10,6 @@ def __find_best_subset_greedy(poly):
 
 
 def __tree_on_features(features, poly):
-    # print("tree", features, "poly=", poly)
     tree = {}
     if len(features) == 0:
         tree['leaf_value'] = sum(poly.values())
@@ -46,10 +45,6 @@ def __divide_poly(features, poly):
         else:
             poly_not_subset[monomial] = val
 
-    # print("divide", features)
-    # print(poly)
-    # print(poly_subset)
-    # print(poly_not_subset)
     return poly_subset, poly_not_subset
 
 

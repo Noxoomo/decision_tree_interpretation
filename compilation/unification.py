@@ -1,4 +1,5 @@
 import json
+import bisect
 
 
 def unify_lgb_tree(tree):
@@ -76,3 +77,22 @@ def set_nodes_weights_tree(tree, xs):
 def set_nodes_weights_ensemble(ensemble, xs):
     for tree in ensemble:
         set_nodes_weights_tree(tree, xs)
+
+
+def binarize(xs):
+    medians = []
+    for i in range(len(xs[0])):
+        values = [x[i] for x in xs]
+        values.sort()
+        medians_i = [values[k * len(xs) // 32] for k in range(32)]
+        medians_i[0] -= 1
+        medians.append(medians_i)
+
+    xs_binarized = []
+    for x in xs:
+        x_binarized = []
+        for i in range(len(x)):
+            x_binarized.append(bisect.bisect_left(medians[i], x[i]) - 1)
+        xs_binarized.append(x_binarized)
+
+    return xs_binarized, medians

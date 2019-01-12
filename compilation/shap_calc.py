@@ -53,9 +53,6 @@ def calc_shap_loss(model, xs, ys, loss_f):
 
 def __calc_shap_rmse_subsets_slow(model, f_id, x, x1):
     m = len(x)
-    fact = np.ones(m + 1)
-    for i in range(1, m + 1):
-        fact[i] = fact[i - 1] * i
 
     res = 0.
     for s in range(1 << m):
@@ -126,7 +123,7 @@ def __calc_f_in_point_for_s(xs, ys, x, s):
     return sum_f / cnt
 
 
-def __calc_shap_in_point(f_id, xs, ys, x):
+def __calc_shap_in_point_slow(f_id, xs, ys, x):
     m = len(xs[0])
     res = 0.
     for s in range(1 << m):
@@ -141,12 +138,16 @@ def __calc_shap_in_point(f_id, xs, ys, x):
     return res
 
 
-def calc_shap_dependent(xs, ys):
+def __calc_shap_dependent(xs, __calc_shap_in_point):
     m = len(xs[0])
     res = []
     for x in xs:
         res.append(np.zeros(m))
         for f_id in range(m):
-            res[-1][f_id] = __calc_shap_in_point(f_id, xs, ys, x)
+            res[-1][f_id] = __calc_shap_in_point(f_id, xs, x)
 
     return res
+
+
+def calc_shap_dependent_slow(xs, ys):
+    return __calc_shap_dependent(xs, lambda f_id, xs, x: __calc_shap_in_point_slow(f_id, xs, ys, x))
