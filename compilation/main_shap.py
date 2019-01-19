@@ -29,7 +29,7 @@ def gen_data_dependent_features(n, m, alpha=0.5):
         xs.append(x)
         ys.append(y / m)
 
-    xs_bin, medians = unification.binarize(xs)
+    xs_bin, medians = unification.binarize(xs, 32)
     return xs_bin[:n // 2], ys[:n // 2], xs_bin[n // 2:], ys[n // 2:]
 
 
@@ -51,14 +51,27 @@ def calc_diff(shap_my, shap):
     for i in range(len(shap_my)):
         for j in range(len(shap_my[i])):
             diff += abs(shap[i][j] - shap_my[i][j])
-            if max(abs(shap[i][j]), abs(shap[i][j])) > 0:
+            if max(abs(shap_my[i][j]), abs(shap[i][j])) > 0:
                 diff_rel += abs(shap[i][j] - shap_my[i][j]) / max(abs(shap[i][j]), abs(shap_my[i][j]))
     return diff / len(shap_my) / len(shap_my[0]), diff_rel / len(shap_my) / len(shap_my[0])
 
 
+def normalize_shap(shap_my1, ys, c0):
+    shap_res = []
+    for i in range(4):
+        shap_res.append([])
+        c = (ys[i] - c0) / sum(shap_my1[i])
+        # print("c =", c)
+        if c < 0 or c > 10:
+            c = 1
+        for j in range(m):
+            shap_res[i].append(shap_my1[i][j] * c)
+    return shap_res
+
+
 if __name__ == "__main__":
     n = 100000
-    m = 10
+    m = 4
     k = 1
     CNT_ITERATIONS = 2
 
@@ -78,40 +91,32 @@ if __name__ == "__main__":
         test_pool = Pool(X_test)
         y_pred = model.predict(test_pool)
         rmse0 = mean_squared_error(y_test, y_pred) ** 0.5
-        print("alpha =", alpha)
+        print("dependency =", alpha)
         print('rmse of catboost model:', rmse0)
 
         shap = model.get_feature_importance(data=train_pool, fstr_type='ShapValues')
         print("shap catboost =", shap[:4])
 
-        X_train_sampled, y_train_sampled = sample(X_train, y_train, k)
-        train_pool_sampled = Pool(X_train_sampled, y_train_sampled)
-
         y_pred_train = model.predict(train_pool)
-        y_pred_train_sampled = model.predict(train_pool_sampled)
 
-        shap_my = shap_dependent.calc_shap_dependent_fast(X_train_sampled, y_pred_train_sampled, X_train[:4])
+        # X_train_sampled, y_train_sampled = sample(X_train, y_train, k)
+        # train_pool_sampled = Pool(X_train_sampled, y_train_sampled)
+
+        # y_pred_train_sampled = model.predict(train_pool_sampled)
+
+        shap_my = shap_dependent.calc_shap_dependent_fast(X_train, y_pred_train, X_train[:4])
         print("my shap =", shap_my)
         diff, diff_rel = calc_diff(shap_my, shap)
         print("diff =", diff)
         print("rel diff =", diff_rel)
 
-        shap_my1 = shap_dependent_new.calc_shap_dependent_fast(X_train_sampled, y_pred_train_sampled, X_train[:4])
+        shap_my1 = shap_dependent_new.calc_shap_dependent_fast(X_train, y_pred_train, X_train[:4])
         print("my shap improved =", shap_my1)
         diff, diff_rel = calc_diff(shap_my1, shap)
         print("diff1 =", diff)
         print("rel diff1 =", diff_rel)
 
-        shap_my2 = []
-        for i in range(4):
-            shap_my2.append([])
-            c = (y_pred_train[i] - shap[i][m]) / sum(shap_my1[i])
-            # print("c =", c)
-            if c < 0 or c > 10:
-                c = 1
-            for j in range(m):
-                shap_my2[i].append(shap_my1[i][j] * c)
-
+        shap_my2 = normalize_shap(shap_my1, y_pred_train, shap[0][m])
         print("my shap improved normalized =", shap_my2)
         diff, diff_rel = calc_diff(shap_my2, shap)
         print("diff2 =", diff)
