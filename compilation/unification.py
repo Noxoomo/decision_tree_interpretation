@@ -79,12 +79,12 @@ def set_nodes_weights_ensemble(ensemble, xs):
         set_nodes_weights_tree(tree, xs)
 
 
-def binarize(xs):
+def binarize(xs, bin_cnt=32):
     medians = []
     for i in range(len(xs[0])):
         values = [x[i] for x in xs]
         values.sort()
-        medians_i = [values[k * len(xs) // 32] for k in range(32)]
+        medians_i = [values[k * len(xs) // bin_cnt] for k in range(bin_cnt)]
         medians_i[0] -= 1
         medians.append(medians_i)
 

@@ -34,16 +34,16 @@ def tree_to_polynomial(tree):
 
 def tree_ensemble_to_polynomial(ensemble):
     poly_res = {}
-    # sum = 0
     for tree in ensemble:
         poly = tree_to_polynomial(tree)
         for monomial, val in poly.items():
-            # sum += 1
             if monomial in poly_res:
                 poly_res[monomial] += val
             else:
                 poly_res[monomial] = val
-    # print("sum = ", sum) # 28848/26791
+
+            if abs(poly_res[monomial]) < 1e-10:
+                poly_res.pop(monomial)
     return poly_res
 
 

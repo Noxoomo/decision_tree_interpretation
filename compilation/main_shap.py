@@ -2,11 +2,13 @@ from sklearn.metrics import mean_squared_error
 from catboost import Pool, CatBoostRegressor
 from random import random, randint, seed
 import matplotlib.pyplot as plt
+import numpy as np
 import json
 
 import compilation
 import shap_calc
 import shap_dependent
+import shap_dependent_new
 import unification
 
 
@@ -15,17 +17,20 @@ def gen_data_dependent_features(n, m, alpha=0.5):
     xs = []
     ys = []
     for i1 in range(n):
-        f = random()
-        x = [int(f * 2)]
+        # f = random()
+        f = np.random.normal()
+        x = [f]
         y = f
         for j1 in range(m - 1):
-            f = random()
-            x.append(int((1 - alpha) * 2 * f + alpha * x[0]))
+            # f = random()
+            f = np.random.normal()
+            x.append((1 - alpha) * f + alpha * x[0])
             y += f
         xs.append(x)
         ys.append(y / m)
 
-    return xs[:n // 2], ys[:n // 2], xs[n // 2:], ys[n // 2:]
+    xs_bin, medians = unification.binarize(xs)
+    return xs_bin[:n // 2], ys[:n // 2], xs_bin[n // 2:], ys[n // 2:]
 
 
 def sample(X, y, k):
@@ -52,7 +57,7 @@ def calc_diff(shap_my, shap):
 
 
 if __name__ == "__main__":
-    n = 10000
+    n = 100000
     m = 10
     k = 1
     CNT_ITERATIONS = 2
@@ -67,7 +72,7 @@ if __name__ == "__main__":
         train_pool = Pool(X_train, y_train)
         # print("X = ", X_train)
         # print("y = ", y_train)
-        model = CatBoostRegressor(n_estimators=20, depth=4, learning_rate=1, loss_function='RMSE')
+        model = CatBoostRegressor(n_estimators=100, depth=4, learning_rate=1, loss_function='RMSE')
         model.fit(train_pool)
 
         test_pool = Pool(X_test)
@@ -84,28 +89,38 @@ if __name__ == "__main__":
 
         y_pred_train = model.predict(train_pool)
         y_pred_train_sampled = model.predict(train_pool_sampled)
+
         shap_my = shap_dependent.calc_shap_dependent_fast(X_train_sampled, y_pred_train_sampled, X_train[:4])
         print("my shap =", shap_my)
-        shap_my1 = []
-        for i in range(4):
-            shap_my1.append([])
-            c = (y_pred_train[i] - shap[i][m]) / sum(shap_my[i])
-            print("c =", c)
-            if c < 0 or c > 2:
-                c = 1
-            for j in range(m):
-                shap_my1[i].append(shap_my[i][j] * c)
-
-        print("my shap normalized =", shap_my1)
         diff, diff_rel = calc_diff(shap_my, shap)
         print("diff =", diff)
         print("rel diff =", diff_rel)
-        average_diff.append(diff)
-        average_rel_diff.append(diff_rel)
 
+        shap_my1 = shap_dependent_new.calc_shap_dependent_fast(X_train_sampled, y_pred_train_sampled, X_train[:4])
+        print("my shap improved =", shap_my1)
         diff, diff_rel = calc_diff(shap_my1, shap)
         print("diff1 =", diff)
         print("rel diff1 =", diff_rel)
+
+        shap_my2 = []
+        for i in range(4):
+            shap_my2.append([])
+            c = (y_pred_train[i] - shap[i][m]) / sum(shap_my1[i])
+            # print("c =", c)
+            if c < 0 or c > 10:
+                c = 1
+            for j in range(m):
+                shap_my2[i].append(shap_my1[i][j] * c)
+
+        print("my shap improved normalized =", shap_my2)
+        diff, diff_rel = calc_diff(shap_my2, shap)
+        print("diff2 =", diff)
+        print("rel diff2 =", diff_rel)
+        print()
+
+        average_diff.append(diff)
+        average_rel_diff.append(diff_rel)
+
     print(average_diff)
     print(average_rel_diff)
 
@@ -113,12 +128,12 @@ if __name__ == "__main__":
     plt.legend()
     plt.xlabel('features dependence')
     plt.ylabel('shap average diff')
-    plt.savefig('data/graphs/shap_diff2.png')
+    plt.savefig('data/graphs/shap_diff.png')
     plt.close()
 
     plt.plot(average_rel_diff)
     plt.legend()
     plt.xlabel('features dependence')
     plt.ylabel('shap average relative diff')
-    plt.savefig('data/graphs/shap_rel_diff2.png')
+    plt.savefig('data/graphs/shap_rel_diff.png')
     plt.close()

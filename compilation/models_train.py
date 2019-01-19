@@ -74,6 +74,20 @@ def load_data():
     return y_train, y_test, X_train, X_test
 
 
+def load_data_amis():
+    df = pd.read_csv('./data/regression/amis.csv', header=None, sep='\t')
+    # df_test = pd.read_csv('./data/regression/featuresTest.txt', header=None, sep='\t')
+    # print(df)
+    l = len(df)
+    y_train = df[0].values
+    y_test = df[0].values
+    X_train = df.drop(0, axis=1).values
+    X_test = df.drop(0, axis=1).values
+    print(X_train)
+    print(y_train)
+    return y_train, y_test, X_train, X_test
+
+
 def load_data_features_txt():
     df_train = pd.read_csv('./data/regression/features.txt', header=None, sep='\t')
     df_test = pd.read_csv('./data/regression/featuresTest.txt', header=None, sep='\t')
